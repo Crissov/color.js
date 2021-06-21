@@ -1,7 +1,5 @@
 import Color, {util} from "./../color.js";
 
-/** @spec IEC 61966-2-1:1996 */
-
 Color.defineSpace({
 	id: "srgb",
 	name: "sRGB",
@@ -11,24 +9,20 @@ Color.defineSpace({
 		blue: [0, 1]
 	},
 	white: Color.whites.D65,
-	α /*= a + 1*/: 1.055,
-	a: 0.055,
-	β /* = K₀/φ = E_t */: 0.0031308/*049535*/,
-	γ /* > 1 */: 12/5 /* = 2.4 */,
-	Γ /* = 1/γ < 1 */: 5/12 /* = 0.41_6 */,
-	/*δ = */ φ: 12.92/*0020442059*/,
-	K₀ /* = β*δ */: 0.04045 /* or 0.040449936 */,
 
 	// convert an array of sRGB values in the range 0.0 - 1.0
 	// to linear light (un-companded) form.
 	// https://en.wikipedia.org/wiki/SRGB
 	toLinear(RGB) {
 		return RGB.map(function (val) {
-			if (val < K₀) {
-				return val / φ;
+			let sign = val < 0? -1 : 1;
+			let abs = Math.abs(val);
+
+			if (abs < 0.04045) {
+				return val / 12.92;
 			}
 
-			return Math.pow((val + a) / α , γ);
+			return sign * Math.pow((abs + 0.055) / 1.055, 2.4);
 		});
 	},
 	// convert an array of linear-light sRGB values in the range 0.0-1.0
@@ -36,29 +30,36 @@ Color.defineSpace({
 	// https://en.wikipedia.org/wiki/SRGB
 	toGamma(RGB) {
 		return RGB.map(function (val) {
-			if (val > β) {
-				return α * Math.pow(val, Γ) - a;
+			let sign = val < 0? -1 : 1;
+			let abs = Math.abs(val);
+
+			if (abs > 0.0031308) {
+				return sign * (1.055 * Math.pow(abs, 1/2.4) - 0.055);
 			}
 
-			return φ * val;
+			return 12.92 * val;
 		});
 	},
 
+	// This matrix was calculated directly from the RGB and white chromaticities
+	// when rounded to 8 decimal places, it agrees completely with the official matrix
+	// see https://github.com/w3c/csswg-drafts/issues/5922
 	toXYZ_M: [
-		[0.4124564,  0.3575761,  0.1804375],
-		[0.2126729,  0.7151522,  0.0721750],
-		[0.0193339,  0.1191920,  0.9503041]
+		[ 0.41239079926595934, 0.357584339383878,   0.1804807884018343  ],
+		[ 0.21263900587151027, 0.715168678767756,   0.07219231536073371 ],
+		[ 0.01933081871559182, 0.11919477979462598, 0.9505321522496607  ]
 	],
+
+	// This matrix is the inverse of the above;
+	// again it agrees with the official definiton when rounded to 8 decimal places
 	fromXYZ_M: [
-		[ 3.2404542, -1.5371385, -0.4985314],
-		[-0.9692660,  1.8760108,  0.0415560],
-		[ 0.0556434, -0.2040259,  1.0572252]
+		[  3.2409699419045226,  -1.537383177570094,   -0.4986107602930034  ],
+		[ -0.9692436362808796,   1.8759675015077202,   0.04155505740717559 ],
+		[  0.05563007969699366, -0.20397695888897652,  1.0569715142428786  ]
 	],
+
 	// convert an array of sRGB values to CIE XYZ
 	// using sRGB's own white, D65 (no chromatic adaptation)
-	// http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
-	// also
-	// https://www.image-engineering.de/library/technotes/958-how-to-convert-between-srgb-and-ciexyz
 	toXYZ(rgb) {
 		rgb = this.toLinear(rgb);
 
@@ -114,6 +115,15 @@ Color.defineSpace({
 				...rest
 			});
 		}
+	},
+
+});
+
+Color.hooks.add("parse-start", env => {
+	let str = env.str;
+
+	if (/^#([a-f0-9]{3,4}){1,2}$/i.test(str)) {
+		env.color = Color.spaces.srgb.parseHex(str);
 	}
 });
 
